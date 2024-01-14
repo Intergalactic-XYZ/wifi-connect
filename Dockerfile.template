@@ -1,13 +1,26 @@
-FROM balenalib/%%BALENA_MACHINE_NAME%%-debian
+FROM rust as builder
+RUN apt update
+RUN apt install -y gcc-aarch64-linux-gnu libdbus-glib-1-dev
+ARG TARGET=aarch64-unknown-linux-gnu
+ADD ./ /app
+WORKDIR /app
+RUN cargo build --release --target=$TARGET
 
+# FROM node:14 as ui-builder
+# ADD ./ui /app
+# WORKDIR /app
+# RUN npm install
+# RUN npm run build
+
+FROM balenalib/%%BALENA_MACHINE_NAME%%-debian:bookworm
 RUN install_packages dnsmasq wireless-tools
-
+ARG TARGET=aarch64-unknown-linux-gnu
 WORKDIR /usr/src/app
-
-ARG VERSION="4.4.0"
-RUN curl -Ls "https://github.com/balena-io/wifi-connect/releases/download/v$VERSION/wifi-connect-v$VERSION-linux-%%BALENA_ARCH%%.tar.gz" \
-  | tar -xvz -C  /usr/src/app/
-
+COPY --from=builder /app/target/$TARGET/release/wifi-connect .
+COPY ./ui/build ./ui
+# COPY --from=ui-builder /app/build ./ui
+ENV DBUS_SYSTEM_BUS_ADDRESS=unix:path=/host/run/dbus/system_bus_socket
+ENV PORTAL_LISTENING_PORT="8081"
+ENV UI_DIRECTORY="/usr/src/app"
 COPY scripts/start.sh .
-
 CMD ["bash", "start.sh"]
